@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# User config (keep template only)
+.ntd-client/
+~/.ntd-client/
+config.json
+
+# Results and data
+*_results.json
+*_results.csv
+test_traffic.csv
+sample_results/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Logs
+*.log
