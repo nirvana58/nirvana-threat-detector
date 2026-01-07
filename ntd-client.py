@@ -13,6 +13,14 @@ from pathlib import Path
 import os
 import pandas as pd
 
+# Import the CSV reorganizer
+try:
+    from reorganize_csv import rearrange_threat_data, create_sample_datasets
+    CSV_REORGANIZER_AVAILABLE = True
+except ImportError:
+    CSV_REORGANIZER_AVAILABLE = False
+    print("Warning: reorganize_csv module not found. CSV reorganization features disabled.")
+
 class Colors:
     RED ='\033[38;5;196m'
     RED2 ='\033[38;5;203m'
@@ -20,6 +28,7 @@ class Colors:
     LIGHT_PINK ='\033[38;5;217m'
     WHITE ='\033[38;5;231m'
     CYAN ='\033[38;5;51m'
+    YELLOW ='\033[38;5;226m'
     RESET ='\033[0m'
     NC = '\033[0m'
     BLUE = '\033[0;34m'
@@ -44,7 +53,7 @@ class ThreatDetectorClient:
         print(f"        {Colors.RED} ████╗  ██║ ██║ ██╔══██╗ ██║   ██║ ██╔══██╗ ████╗  ██║ ██╔══██╗{Colors.RESET}")
         print(f"        {Colors.RED2} ██╔██╗ ██║ ██║ ██████╔╝ ██║   ██║ ███████║ ██╔██╗ ██║ ███████║{Colors.RESET}")
         print(f"        {Colors.PINK} ██║╚██╗██║ ██║ ██╔══██╗ ╚██╗ ██╔╝ ██╔══██║ ██║╚██╗██║ ██╔══██║{Colors.RESET}")
-        print(f"        {Colors.LIGHT_PINK} ██║ ╚████║ ██║ ██║  ██║  ╚████╔╝  ██║  ██║ █╚═╝ ╚████═╝ ╚═╝  ╚═╝{Colors.RESET}")
+        print(f"        {Colors.LIGHT_PINK} ██║ ╚████║ ██║ ██║  ██║  ╚████╔╝  ██║  ██║ ██║ ╚████║ ██║  ██║{Colors.RESET}")
         print(f"        {Colors.WHITE} ╚═╝  ╚═══╝ ╚═╝ ╚═╝  ╚═╝   ╚═══╝   ╚═╝  ╚═╝ ╚═╝  ╚═══╝ ╚═╝  ╚═╝{Colors.RESET}")
         print()
         print(f"                        {Colors.CYAN}ai-threat detector{Colors.RESET}")
@@ -121,6 +130,44 @@ class ThreatDetectorClient:
             print("  Check if the API URL is correct")
         except Exception as e:
             self._log_error(f"Error: {e}")
+
+    def reorganize_csv(self, input_file: str, output_file: str = None):
+        """Reorganize pipe-delimited CSV into clean format"""
+        if not CSV_REORGANIZER_AVAILABLE:
+            self._log_error("CSV reorganizer not available. Ensure reorganize_csv.py is in the same directory.")
+            return False
+
+        print(f"\n{Colors.CYAN}{'='*70}{Colors.NC}")
+        print(f"{Colors.WHITE}CSV DATA REORGANIZER{Colors.NC}")
+        print(f"{Colors.CYAN}{'='*70}{Colors.NC}\n")
+
+        try:
+            # Check if file exists
+            if not Path(input_file).exists():
+                self._log_error(f"File not found: {input_file}")
+                return False
+
+            # Run reorganization
+            self._log_info(f"Reorganizing: {input_file}")
+            df_full, df_ml = rearrange_threat_data(input_file, output_file)
+
+            if df_full is not None and df_ml is not None:
+                self._log_success("CSV reorganization complete!")
+                
+                # Ask about sample datasets
+                create_samples = input(f"\n{Colors.CYAN}Create sample datasets for testing? (y/n):{Colors.NC} ").strip().lower()
+                if create_samples == 'y':
+                    output_dir = Path(input_file).parent
+                    create_sample_datasets(df_ml, output_dir)
+                
+                return True
+            else:
+                self._log_error("Reorganization failed")
+                return False
+
+        except Exception as e:
+            self._log_error(f"Error during reorganization: {e}")
+            return False
 
     def load_data(self, file_path: str) -> List[Dict[str, Any]]:
         """Load network data from file"""
@@ -258,8 +305,9 @@ class ThreatDetectorClient:
             print("  [2] List Available Models")
             print("  [3] Analyze Network Traffic")
             print("  [4] Quick Analysis (No LLM)")
-            print("  [5] View Configuration")
-            print("  [6] Exit")
+            print("  [5] Reorganize CSV File")
+            print("  [6] View Configuration")
+            print("  [7] Exit")
 
             choice = input(f"\n{Colors.WHITE}Select option:{Colors.NC} ").strip()
 
@@ -308,18 +356,39 @@ class ThreatDetectorClient:
                 self.analyze(data_file, use_llm=False, save_results=True)
 
             elif choice == '5':
+                if not CSV_REORGANIZER_AVAILABLE:
+                    print()
+                    self._log_error("CSV reorganizer not available")
+                    self._log_info("Ensure reorganize_csv.py is in the same directory")
+                    continue
+
+                print()
+                input_file = input("Path to pipe-delimited CSV file: ").strip()
+                if not input_file:
+                    self._log_error("File path required")
+                    continue
+
+                output_file = input("Output file path (optional, press Enter for auto): ").strip()
+                output_file = output_file if output_file else None
+
+                print()
+                self.reorganize_csv(input_file, output_file)
+
+            elif choice == '6':
                 print()
                 self._log_info("Current Configuration:")
                 print(f"  API URL: {Colors.CYAN}{self.api_url}{Colors.NC}")
                 print(f"  API Key: {Colors.CYAN}{self.api_key[:20]}...{self.api_key[-10:]}{Colors.NC}")
+                print(f"  CSV Reorganizer: {Colors.GREEN if CSV_REORGANIZER_AVAILABLE else Colors.RED}"
+                      f"{'Available' if CSV_REORGANIZER_AVAILABLE else 'Not Available'}{Colors.NC}")
 
-            elif choice == '6':
+            elif choice == '7':
                 print(f"\n{Colors.GREEN}Goodbye!{Colors.NC}\n")
                 sys.exit(0)
 
             else:
                 self._log_error("Invalid option")
-                print("  Please select 1-6")
+                print("  Please select 1-7")
 
 def load_config():
     """Load configuration from ~/.ntd-client/config.json"""
@@ -373,6 +442,11 @@ def main():
     analyze_parser.add_argument('--llm-model', default='llama3.2:1b', help='LLM model to use')
     analyze_parser.add_argument('--threshold', type=float, default=0.7, help='Confidence threshold')
     analyze_parser.add_argument('--no-save', action='store_true', help='Don\'t save results')
+
+    # Reorganize CSV
+    reorganize_parser = subparsers.add_parser('reorganize', help='Reorganize pipe-delimited CSV')
+    reorganize_parser.add_argument('input_file', help='Input CSV file (pipe-delimited)')
+    reorganize_parser.add_argument('--output', help='Output CSV file (optional)')
 
     # Interactive mode
     subparsers.add_parser('interactive', help='Interactive mode')
@@ -454,6 +528,14 @@ def main():
             confidence_threshold=args.threshold,
             save_results=not args.no_save
         )
+
+    elif args.command == 'reorganize':
+        if not CSV_REORGANIZER_AVAILABLE:
+            print(f"{Colors.RED}Error: CSV reorganizer not available{Colors.NC}")
+            print(f"Ensure reorganize_csv.py is in the same directory as ntd-client.py")
+            sys.exit(1)
+        
+        client.reorganize_csv(args.input_file, args.output)
 
     elif args.command == 'interactive':
         client.interactive_mode()
