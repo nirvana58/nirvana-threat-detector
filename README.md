@@ -75,7 +75,7 @@ Configure your API credentials:
 Or manually set environment variables:
 
 ```bash
-export NTD_API_URL='https://your-api-url.railway.app'
+export NTD_API_URL='https://ai-threat-detector.up.railway.app'
 export NTD_API_KEY='your-api-key-here'
 ```
 
