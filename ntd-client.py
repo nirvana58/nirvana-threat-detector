@@ -2,6 +2,7 @@
 """
 Network Threat Detector - User CLI Client
 Analyze network traffic for threats using cloud-based ML + LLM
+Supports CSV, JSON, and PCAP file formats
 """
 
 import requests
@@ -13,13 +14,21 @@ from pathlib import Path
 import os
 import pandas as pd
 
-# Import the CSV reorganizer
+# Import CSV reorganizer
 try:
     from reorganize_csv import rearrange_threat_data, create_sample_datasets
     CSV_REORGANIZER_AVAILABLE = True
 except ImportError:
     CSV_REORGANIZER_AVAILABLE = False
-    print("Warning: reorganize_csv module not found. CSV reorganization features disabled.")
+
+# Import PCAP converter
+try:
+    from pcap_converter import convert_pcap_to_csv, is_pcap_file, SCAPY_AVAILABLE
+    PCAP_SUPPORT_AVAILABLE = SCAPY_AVAILABLE
+except ImportError:
+    PCAP_SUPPORT_AVAILABLE = False
+    def is_pcap_file(filename):
+        return filename.lower().endswith(('.pcap', '.pcapng', '.cap'))
 
 class Colors:
     RED ='\033[38;5;196m'
@@ -131,6 +140,26 @@ class ThreatDetectorClient:
         except Exception as e:
             self._log_error(f"Error: {e}")
 
+    def convert_pcap(self, pcap_file: str, output_file: str = None):
+        """Convert PCAP file to CSV"""
+        if not PCAP_SUPPORT_AVAILABLE:
+            self._log_error("PCAP support not available")
+            self._log_info("Install scapy: pip install scapy")
+            return None
+
+        print(f"\n{Colors.CYAN}{'='*70}{Colors.NC}")
+        print(f"{Colors.WHITE}PCAP TO CSV CONVERTER{Colors.NC}")
+        print(f"{Colors.CYAN}{'='*70}{Colors.NC}\n")
+
+        try:
+            from pcap_converter import convert_pcap_to_csv
+            csv_file = convert_pcap_to_csv(pcap_file, output_file)
+            self._log_success(f"PCAP converted to CSV: {csv_file}")
+            return csv_file
+        except Exception as e:
+            self._log_error(f"PCAP conversion failed: {e}")
+            return None
+
     def reorganize_csv(self, input_file: str, output_file: str = None):
         """Reorganize pipe-delimited CSV into clean format"""
         if not CSV_REORGANIZER_AVAILABLE:
@@ -142,19 +171,16 @@ class ThreatDetectorClient:
         print(f"{Colors.CYAN}{'='*70}{Colors.NC}\n")
 
         try:
-            # Check if file exists
             if not Path(input_file).exists():
                 self._log_error(f"File not found: {input_file}")
                 return False
 
-            # Run reorganization
             self._log_info(f"Reorganizing: {input_file}")
             df_full, df_ml = rearrange_threat_data(input_file, output_file)
 
             if df_full is not None and df_ml is not None:
                 self._log_success("CSV reorganization complete!")
                 
-                # Ask about sample datasets
                 create_samples = input(f"\n{Colors.CYAN}Create sample datasets for testing? (y/n):{Colors.NC} ").strip().lower()
                 if create_samples == 'y':
                     output_dir = Path(input_file).parent
@@ -170,16 +196,35 @@ class ThreatDetectorClient:
             return False
 
     def load_data(self, file_path: str) -> List[Dict[str, Any]]:
-        """Load network data from file"""
+        """Load network data from file (CSV, JSON, or PCAP)"""
         try:
+            # Check if PCAP file
+            if is_pcap_file(file_path):
+                self._log_info("PCAP file detected")
+                
+                if not PCAP_SUPPORT_AVAILABLE:
+                    self._log_error("PCAP support not available")
+                    self._log_info("Install scapy: pip install scapy")
+                    return []
+                
+                # Convert PCAP to CSV first
+                csv_file = self.convert_pcap(file_path)
+                if not csv_file:
+                    return []
+                
+                file_path = csv_file
+            
+            # Load CSV or JSON
             if file_path.endswith('.csv'):
                 df = pd.read_csv(file_path)
             elif file_path.endswith('.json'):
                 df = pd.read_json(file_path)
             else:
-                raise ValueError("Unsupported format. Use CSV or JSON.")
-
+                raise ValueError("Unsupported format. Use CSV, JSON, or PCAP.")
+            
+            df = df.fillna(0)
             return df.to_dict('records')
+            
         except Exception as e:
             self._log_error(f"Failed to load data: {e}")
             return []
@@ -267,7 +312,7 @@ class ThreatDetectorClient:
             color = Colors.GREEN if threat == 'normal' else Colors.RED
             print(f"  {color}{threat:15}{Colors.NC} {count:5} ({count/result['total_records']:.1%})")
 
-        # Top threats - Simple table without tabulate
+        # Top threats
         threats_only = [p for p in result['predictions'] if p['is_threat']]
         if threats_only:
             threats_only.sort(key=lambda x: x['confidence'], reverse=True)
@@ -303,11 +348,12 @@ class ThreatDetectorClient:
             print(f"\n{Colors.CYAN}Client Menu:{Colors.NC}")
             print("  [1] Check Connection")
             print("  [2] List Available Models")
-            print("  [3] Analyze Network Traffic")
+            print("  [3] Analyze Network Traffic (CSV/JSON/PCAP)")
             print("  [4] Quick Analysis (No LLM)")
-            print("  [5] Reorganize CSV File")
-            print("  [6] View Configuration")
-            print("  [7] Exit")
+            print("  [5] Convert PCAP to CSV")
+            print("  [6] Reorganize CSV File")
+            print("  [7] View Configuration")
+            print("  [8] Exit")
 
             choice = input(f"\n{Colors.WHITE}Select option:{Colors.NC} ").strip()
 
@@ -321,7 +367,8 @@ class ThreatDetectorClient:
 
             elif choice == '3':
                 print()
-                data_file = input("Path to network data file (CSV/JSON): ").strip()
+                print("Supported formats: CSV, JSON, PCAP (.pcap, .pcapng, .cap)")
+                data_file = input("Path to network data file: ").strip()
                 if not data_file:
                     self._log_error("File path required")
                     continue
@@ -346,7 +393,8 @@ class ThreatDetectorClient:
 
             elif choice == '4':
                 print()
-                data_file = input("Path to network data file (CSV/JSON): ").strip()
+                print("Supported formats: CSV, JSON, PCAP (.pcap, .pcapng, .cap)")
+                data_file = input("Path to network data file: ").strip()
                 if not data_file:
                     self._log_error("File path required")
                     continue
@@ -356,6 +404,25 @@ class ThreatDetectorClient:
                 self.analyze(data_file, use_llm=False, save_results=True)
 
             elif choice == '5':
+                if not PCAP_SUPPORT_AVAILABLE:
+                    print()
+                    self._log_error("PCAP support not available")
+                    self._log_info("Install scapy: pip install scapy")
+                    continue
+
+                print()
+                pcap_file = input("Path to PCAP file (.pcap, .pcapng, .cap): ").strip()
+                if not pcap_file:
+                    self._log_error("File path required")
+                    continue
+
+                output_file = input("Output CSV file (optional, press Enter for auto): ").strip()
+                output_file = output_file if output_file else None
+
+                print()
+                self.convert_pcap(pcap_file, output_file)
+
+            elif choice == '6':
                 if not CSV_REORGANIZER_AVAILABLE:
                     print()
                     self._log_error("CSV reorganizer not available")
@@ -374,21 +441,23 @@ class ThreatDetectorClient:
                 print()
                 self.reorganize_csv(input_file, output_file)
 
-            elif choice == '6':
+            elif choice == '7':
                 print()
                 self._log_info("Current Configuration:")
                 print(f"  API URL: {Colors.CYAN}{self.api_url}{Colors.NC}")
                 print(f"  API Key: {Colors.CYAN}{self.api_key[:20]}...{self.api_key[-10:]}{Colors.NC}")
                 print(f"  CSV Reorganizer: {Colors.GREEN if CSV_REORGANIZER_AVAILABLE else Colors.RED}"
                       f"{'Available' if CSV_REORGANIZER_AVAILABLE else 'Not Available'}{Colors.NC}")
+                print(f"  PCAP Support: {Colors.GREEN if PCAP_SUPPORT_AVAILABLE else Colors.RED}"
+                      f"{'Available' if PCAP_SUPPORT_AVAILABLE else 'Not Available'}{Colors.NC}")
 
-            elif choice == '7':
+            elif choice == '8':
                 print(f"\n{Colors.GREEN}Goodbye!{Colors.NC}\n")
                 sys.exit(0)
 
             else:
                 self._log_error("Invalid option")
-                print("  Please select 1-7")
+                print("  Please select 1-8")
 
 def load_config():
     """Load configuration from ~/.ntd-client/config.json"""
@@ -402,7 +471,6 @@ def load_config():
 
 def save_config(api_url: str, api_key: str):
     """Save configuration"""
-    # Ensure proper URL format
     if not api_url.startswith('http'):
         api_url = f"https://{api_url}"
 
@@ -420,7 +488,20 @@ def save_config(api_url: str, api_key: str):
 def main():
     parser = argparse.ArgumentParser(
         description='AI Network Threat Detector Client',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Supported file formats:
+  CSV:  Standard comma-separated values
+  JSON: Network data in JSON format
+  PCAP: Network packet captures (.pcap, .pcapng, .cap)
+
+Examples:
+  ntd-client --configure
+  ntd-client analyze traffic.csv
+  ntd-client analyze capture.pcap --no-llm
+  ntd-client convert-pcap capture.pcap
+  ntd-client interactive
+        """
     )
 
     parser.add_argument('--api-url', help='API URL')
@@ -437,11 +518,16 @@ def main():
 
     # Analyze
     analyze_parser = subparsers.add_parser('analyze', help='Analyze network traffic')
-    analyze_parser.add_argument('data_file', help='Network data file (CSV/JSON)')
+    analyze_parser.add_argument('data_file', help='Network data file (CSV/JSON/PCAP)')
     analyze_parser.add_argument('--no-llm', action='store_true', help='Disable LLM analysis')
     analyze_parser.add_argument('--llm-model', default='llama3.2:1b', help='LLM model to use')
     analyze_parser.add_argument('--threshold', type=float, default=0.7, help='Confidence threshold')
     analyze_parser.add_argument('--no-save', action='store_true', help='Don\'t save results')
+
+    # Convert PCAP
+    pcap_parser = subparsers.add_parser('convert-pcap', help='Convert PCAP to CSV')
+    pcap_parser.add_argument('pcap_file', help='PCAP file (.pcap, .pcapng, .cap)')
+    pcap_parser.add_argument('--output', help='Output CSV file (optional)')
 
     # Reorganize CSV
     reorganize_parser = subparsers.add_parser('reorganize', help='Reorganize pipe-delimited CSV')
@@ -460,13 +546,11 @@ def main():
 
         api_url = input("API URL (e.g., ai-threat-detector.up.railway.app): ").strip()
 
-        # Add https:// if not present
         if not api_url.startswith('http'):
             api_url = f"https://{api_url}"
 
         api_key = input("API Key (starts with 'ntd_'): ").strip()
 
-        # Validate API key format
         if not api_key.startswith('ntd_'):
             print(f"\n{Colors.YELLOW}⚠ Warning: API key should start with 'ntd_'{Colors.NC}")
             confirm = input("Continue anyway? (y/n): ").strip().lower()
@@ -474,7 +558,6 @@ def main():
                 print("Configuration cancelled.")
                 return
 
-        # Test connection before saving
         print(f"\n{Colors.BLUE}Testing connection...{Colors.NC}")
         try:
             test_url = api_url.rstrip('/') + '/health'
@@ -529,6 +612,14 @@ def main():
             save_results=not args.no_save
         )
 
+    elif args.command == 'convert-pcap':
+        if not PCAP_SUPPORT_AVAILABLE:
+            print(f"{Colors.RED}Error: PCAP support not available{Colors.NC}")
+            print(f"Install scapy: {Colors.CYAN}pip install scapy{Colors.NC}")
+            sys.exit(1)
+        
+        client.convert_pcap(args.pcap_file, args.output)
+
     elif args.command == 'reorganize':
         if not CSV_REORGANIZER_AVAILABLE:
             print(f"{Colors.RED}Error: CSV reorganizer not available{Colors.NC}")
@@ -547,9 +638,14 @@ def main():
 if __name__ == '__main__':
     try:
         import pandas
-        import tabulate
     except ImportError:
         print("Installing required packages...")
-        os.system(f"{sys.executable} -m pip install pandas tabulate requests")
+        os.system(f"{sys.executable} -m pip install pandas requests")
+    
+    # Check for optional dependencies
+    try:
+        import scapy
+    except ImportError:
+        print(f"\n{Colors.YELLOW}Note: PCAP support not available. Install with: pip install scapy{Colors.NC}\n")
 
     main()
