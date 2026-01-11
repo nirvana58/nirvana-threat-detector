@@ -12,6 +12,9 @@ joblib>=1.4.0
 # AI / LLM
 ollama>=0.3.0         # Updated client
 
+# Network Analysis
+scapy>=2.5.0          # PCAP file processing
+
 # Utilities
 pydantic>=2.9.0       # CRITICAL: Fixes the 'recursive_guard' error
 requests>=2.32.0
