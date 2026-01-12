@@ -37,15 +37,8 @@ The ML model achieves 97%+ accuracy on test data. Actual accuracy depends on you
 ### How do I get an API key?
 
 Contact your system administrator. They will:
-1. Run: `ntd-admin create-key your-username`
-2. Give you the generated API key (starts with `ntd_`)
+1. Give you the generated API key (starts with `ntd_`)
 
-### What if I don't have an admin?
-
-If you want to set up your own instance, you'll need to:
-1. Deploy the backend server (see main repository)
-2. Train the ML model
-3. Generate your own API keys
 
 ### Can I try it without an API key?
 
